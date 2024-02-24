@@ -1,87 +1,48 @@
-//SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: GPL-2.0-or-later
 pragma solidity >=0.8.0 <0.9.0;
+pragma abicoder v2;
 
-// Useful for debugging. Remove when deploying to a live network.
-import "hardhat/console.sol";
+import "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
+import "@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol";
 
-// Use openzeppelin to inherit battle-tested implementations (ERC20, ERC721, etc)
-// import "@openzeppelin/contracts/access/Ownable.sol";
-
-/**
- * A smart contract that allows changing a state variable of the contract and tracking the changes
- * It also allows the owner to withdraw the Ether in the contract
- * @author BuidlGuidl
- */
 contract YourContract {
-	// State Variables
-	address public immutable owner;
-	string public greeting = "Building Unstoppable Apps!!!";
-	bool public premium = false;
-	uint256 public totalCounter = 0;
-	mapping(address => uint) public userGreetingCounter;
+	ISwapRouter public immutable swapRouter;
+	address public constant DAI = 0x6B175474E89094C44Da98b954EedeAC495271d0F;
+	address public constant WETH9 = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
+	uint24 public constant feeTier = 3000;
 
-	// Events: a way to emit log statements from smart contract that can be listened to by external parties
-	event GreetingChange(
-		address indexed greetingSetter,
-		string newGreeting,
-		bool premium,
-		uint256 value
-	);
-
-	// Constructor: Called once on contract deployment
-	// Check packages/hardhat/deploy/00_deploy_your_contract.ts
-	constructor(address _owner) {
-		owner = _owner;
+	constructor(ISwapRouter _swapRouter) {
+		swapRouter = _swapRouter;
 	}
 
-	// Modifier: used to define a set of rules that must be met before or after a function is executed
-	// Check the withdraw() function
-	modifier isOwner() {
-		// msg.sender: predefined variable that represents address of the account that called the current function
-		require(msg.sender == owner, "Not the Owner");
-		_;
-	}
-
-	/**
-	 * Function that allows anyone to change the state variable "greeting" of the contract and increase the counters
-	 *
-	 * @param _newGreeting (string memory) - new greeting to save on the contract
-	 */
-	function setGreeting(string memory _newGreeting) public payable {
-		// Print data to the hardhat chain console. Remove when deploying to a live network.
-		console.log(
-			"Setting new greeting '%s' from %s",
-			_newGreeting,
-			msg.sender
+	function swapWETHForDAI(
+		uint256 amountIn
+	) external returns (uint256 amountOut) {
+		// Transfer the specified amount of WETH9 to this contract.
+		TransferHelper.safeTransferFrom(
+			WETH9,
+			msg.sender,
+			address(this),
+			amountIn
 		);
-
-		// Change state variables
-		greeting = _newGreeting;
-		totalCounter += 1;
-		userGreetingCounter[msg.sender] += 1;
-
-		// msg.value: built-in global variable that represents the amount of ether sent with the transaction
-		if (msg.value > 0) {
-			premium = true;
-		} else {
-			premium = false;
-		}
-
-		// emit: keyword used to trigger an event
-		emit GreetingChange(msg.sender, _newGreeting, msg.value > 0, 0);
+		// Approve the router to spend WETH9.
+		TransferHelper.safeApprove(WETH9, address(swapRouter), amountIn);
+		// Note: To use this example, you should explicitly set slippage limits, omitting for simplicity
+		uint256 minOut = /* Calculate min output */ 0;
+		uint160 priceLimit = /* Calculate price limit */ 0;
+		// Create the params that will be used to execute the swap
+		ISwapRouter.ExactInputSingleParams memory params = ISwapRouter
+			.ExactInputSingleParams({
+				tokenIn: WETH9,
+				tokenOut: DAI,
+				fee: feeTier,
+				recipient: msg.sender,
+				deadline: block.timestamp,
+				amountIn: amountIn,
+				amountOutMinimum: minOut,
+				sqrtPriceLimitX96: priceLimit
+			});
+		// The call to `exactInputSingle` executes the swap.
+		amountOut = swapRouter.exactInputSingle(params);
 	}
-
-	/**
-	 * Function that allows the owner to withdraw all the Ether in the contract
-	 * The function can only be called by the owner of the contract as defined by the isOwner modifier
-	 */
-	function withdraw() public isOwner {
-		(bool success, ) = owner.call{ value: address(this).balance }("");
-		require(success, "Failed to send Ether");
-	}
-
-	/**
-	 * Function that allows the contract to receive ETH
-	 */
-	receive() external payable {}
 }
